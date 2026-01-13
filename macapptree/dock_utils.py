@@ -59,7 +59,8 @@ def _propagate_screen_rect_local(ui_element, screen_rect_tl):
         _propagate_screen_rect_local(child, screen_rect_tl)
 
 # if the dock is set to autohide, we can move the mouse to reveal it temporarily
-def _reveal_dock_temporarily(orientation: str = "bottom", dwell: float = 0.8):
+# if the dock is set to autohide, we can move the mouse to reveal it temporarily
+def _move_mouse_revealing_dock(orientation: str = "bottom", dwell: float = 0.8):
     try:
         # Save current mouse position
         loc = Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
@@ -69,21 +70,29 @@ def _reveal_dock_temporarily(orientation: str = "bottom", dwell: float = 0.8):
         sw, sh = int(screen.size.width), int(screen.size.height)
 
         if orientation.lower() == "left":
-            x, y = 2, sh // 2
+            x, y = 0, sh // 2
         elif orientation.lower() == "right":
-            x, y = sw - 2, sh // 2
+            x, y = sw - 1, sh // 2
         else:
             # bottom
-            x, y = sw // 2, sh - 2
+            x, y = sw // 2, sh - 1
 
         evt = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, (x, y), Quartz.kCGMouseButtonLeft)
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, evt)
         time.sleep(dwell)
+        
+        return (current_x, current_y)
+    except Exception:
+        return None
 
+def _restore_mouse_position(pos):
+    if not pos:
+        return
+    try:
+        current_x, current_y = pos
         # Restore mouse position
         restore_evt = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, (current_x, current_y), Quartz.kCGMouseButtonLeft)
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, restore_evt)
-        
     except Exception:
         pass
 
@@ -96,46 +105,51 @@ class DockCapture:
     def capture(self, max_depth=None, output_screenshot_dir=None):
         store_screen_scaling_factor()
 
+        original_mouse_pos = None
         if self.reveal:
-            _reveal_dock_temporarily(self.orientation, dwell=self.dwell)
+            original_mouse_pos = _move_mouse_revealing_dock(self.orientation, dwell=self.dwell)
 
-        dock_ax = apps.dock_ax_application()
+        try:
+            dock_ax = apps.dock_ax_application()
 
-        x_tl, y_tl, w, h = _dock_tl_rect_fixed(self.orientation)
+            x_tl, y_tl, w, h = _dock_tl_rect_fixed(self.orientation)
 
-        dock_root = UIElement(
-            dock_ax,
-            offset_x=x_tl,
-            offset_y=y_tl,
-            max_depth=max_depth,
-            parents_visible_bbox=[0, 0, w, h],
-        )
-        dock_root.app_name = "Dock"
-        dock_root.window_screen_rect = [x_tl, y_tl, x_tl + w, y_tl + h]
+            dock_root = UIElement(
+                dock_ax,
+                offset_x=x_tl,
+                offset_y=y_tl,
+                max_depth=max_depth,
+                parents_visible_bbox=[0, 0, w, h],
+            )
+            dock_root.app_name = "Dock"
+            dock_root.window_screen_rect = [x_tl, y_tl, x_tl + w, y_tl + h]
 
-        extract_window(
-            dock_root, "com.apple.dock", None,
-            perform_hit_test=False, print_nodes=False, max_depth=max_depth
-        )
-        propagate_screen_rect(dock_root, dock_root.window_screen_rect)
+            extract_window(
+                dock_root, "com.apple.dock", None,
+                perform_hit_test=False, print_nodes=False, max_depth=max_depth
+            )
+            propagate_screen_rect(dock_root, dock_root.window_screen_rect)
 
-        screenshot_info = None
-        if output_screenshot_dir:
-            os.makedirs(output_screenshot_dir, exist_ok=True)
+            screenshot_info = None
+            if output_screenshot_dir:
+                os.makedirs(output_screenshot_dir, exist_ok=True)
 
-            full_path = os.path.join(output_screenshot_dir, "dock_full.png")
-            capture_full_screen(full_path)
+                full_path = os.path.join(output_screenshot_dir, "dock_full.png")
+                capture_full_screen(full_path)
 
-            crop_path = full_path.replace(".png", "_cropped.png")
-            from macapptree.screenshot_app_window import crop_screenshot
-            _ = crop_screenshot(full_path, (x_tl, y_tl, w, h), crop_path)
+                crop_path = full_path.replace(".png", "_cropped.png")
+                from macapptree.screenshot_app_window import crop_screenshot
+                _ = crop_screenshot(full_path, (x_tl, y_tl, w, h), crop_path)
 
-            segmented_path = segment_window_components(dock_root, crop_path) or crop_path
-            screenshot_info = {
-                "app": "com.apple.dock",
-                "window_name": "Dock",
-                "cropped_screenshot_path": crop_path,
-                "segmented_screenshot_path": segmented_path,
-            }
+                segmented_path = segment_window_components(dock_root, crop_path) or crop_path
+                screenshot_info = {
+                    "app": "com.apple.dock",
+                    "window_name": "Dock",
+                    "cropped_screenshot_path": crop_path,
+                    "segmented_screenshot_path": segmented_path,
+                }
 
-        return dock_root, screenshot_info
+            return dock_root, screenshot_info
+        finally:
+            if original_mouse_pos:
+                _restore_mouse_position(original_mouse_pos)
