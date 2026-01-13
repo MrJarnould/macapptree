@@ -1,24 +1,33 @@
-import AppKit
-import ApplicationServices
 import argparse
 import json
 import os
 import time
-from PIL import ImageGrab, Image, ImageDraw, ImageFont
 
-from macapptree.apps import get_visible_windows_for_bundles
+import AppKit
+import ApplicationServices
+from PIL import Image, ImageDraw, ImageFont
+
 import macapptree.apps as apps
-from macapptree.window_tools import store_screen_scaling_factor, segment_window_components
-from macapptree.uielement import UIElement, element_attribute, element_value
-from macapptree.extractor import extract_window
-from macapptree.screenshot_app_window import screenshot_window_to_file, capture_full_screen, rect_subtract
-from macapptree.uielement import _flatten_ui_elements
-from macapptree.window_tools import propagate_screen_rect, _iou, _build_global_visible_index
-
-from macapptree.menu_bar_utils import MenuBarCapture
 from macapptree.dock_utils import DockCapture
-
-
+from macapptree.extractor import extract_window
+from macapptree.menu_bar_utils import MenuBarCapture
+from macapptree.screenshot_app_window import (
+    capture_full_screen,
+    screenshot_window_to_file,
+)
+from macapptree.uielement import (
+    UIElement,
+    _flatten_ui_elements,
+    element_attribute,
+    element_value,
+)
+from macapptree.window_tools import (
+    _build_global_visible_index,
+    _iou,
+    propagate_screen_rect,
+    segment_window_components,
+    store_screen_scaling_factor,
+)
 
 
 def get_window_rect(window):
@@ -226,7 +235,7 @@ def main(app_bundles, output_accessibility_file, output_screenshot_dir, max_dept
 
     if include_dock:
         print("Processing Dock…")
-        dock = DockCapture(orientation="bottom", reveal=True, dwell=0.8)
+        dock = DockCapture(dwell=0.8)
 
         dock_root, dock_shots = dock.capture(max_depth, output_screenshot_dir)
         if dock_root:
