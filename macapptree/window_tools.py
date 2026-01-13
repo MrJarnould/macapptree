@@ -1,8 +1,8 @@
-import AppKit
 import shutil
-
-from PIL import Image, ImageDraw
 from time import sleep
+
+import AppKit
+from PIL import Image, ImageDraw
 
 from macapptree.apps import get_visible_windows_for_bundles
 from macapptree.screenshot_app_window import rect_subtract
@@ -178,6 +178,7 @@ def segment_window_components(window, image_path: str):
 
     return segment_image_path
 
+
 def _build_global_visible_index(bundle_ids):
     windows = get_visible_windows_for_bundles(bundle_ids) 
     seen = []
@@ -194,19 +195,75 @@ def _build_global_visible_index(bundle_ids):
     return out
 
 
-# paint all children to a different color on the screenshot
-def segment_image(image_path, window_element, image_drawer=None, img=None):
+def segment_image(image_path, window_element, image_drawer=None, img=None, scale_factor=None):
     if image_path is None:
         return
 
+    should_save = False
     if image_drawer is None:
+        should_save = True
         img = Image.open(image_path)
         image_drawer = ImageDraw.Draw(img)
+        
+        # Determine scale factor only once at the top level call
+        if scale_factor is None:
+            # Heuristic: Compare image width vs window element width (points)
+            # This is flawed if window_element is just a container without size.
+            # But the root window element usually has a size.
+            
+            # Better Heuristic: Check against global screen backing factor.
+            # If image width (px) approx equals window width (pt) * global_scale, use global_scale.
+            # If image width (px) approx equals window width (pt) * 1.0, use 1.0.
+            
+            # Let's try to infer from the ratio of image size to screen size?
+            # Or pass it in? Passing it in would require changing callers.
+            # Let's try to infer it here.
+            
+            current_scaling_factor = _screen_scaling_factor # Default
+            
+            try:
+                # If window_element has a valid size (points)
+                if hasattr(window_element, 'window_screen_rect'):
+                     # window_screen_rect is (x, y, x2, y2)
+                    bx, by, bx2, by2 = window_element.window_screen_rect
+                    win_w_pt = bx2 - bx
+                    img_w_px = img.width
+                    
+                    if win_w_pt > 0:
+                        ratio = img_w_px / win_w_pt
+                        # Round to nearest integer-ish (1.0 or 2.0)
+                        if abs(ratio - 1.0) < 0.1:
+                            current_scaling_factor = 1.0
+                        elif abs(ratio - 2.0) < 0.1:
+                            current_scaling_factor = 2.0
+                        # Else keep default
+            except:
+                pass
+            
+            scale_factor = current_scaling_factor
 
+    # If recursively called, scale_factor is passed down or None (if called from inside loop without updating arg)
+    # Wait, existing recursion logic: `segment_image(..., child, image_drawer=image_drawer, img=img)`
+    # It does NOT pass scale_factor. So we default to None.
+    # But if image_drawer is NOT None, we don't recalculate scale_factor.
+    # We need to make sure we use the same scale factor during recursion.
+    # This design is slightly messy because recursion uses the same function.
+    
+    # FIX: Use a helper or ensure scale_factor is passed.
+    
+    # Since I cannot easily change the signature in the recursive call without changing the file significantly,
+    # I will use a local variable `use_scale_factor`.
+    
+    use_scale_factor = scale_factor if scale_factor is not None else _screen_scaling_factor
+    
+    # If we are the root call (image_drawer is None), we calculated it.
+    
+    use_scale_factor = scale_factor if scale_factor is not None else _screen_scaling_factor
+    
     # iterate over all children
     for child in getattr(window_element, "children", []):
         if getattr(child, "children", None):
-            segment_image(image_path, child, image_drawer=image_drawer, img=img)
+            segment_image(image_path, child, image_drawer=image_drawer, img=img, scale_factor=use_scale_factor)
 
         if not child.visible:
             continue
@@ -214,7 +271,7 @@ def segment_image(image_path, window_element, image_drawer=None, img=None):
         bbox = child.visible_bbox
         if not bbox:
             continue
-
+        
         size = child.size
         if size is None or size.width == 0 or size.height == 0:
             continue
@@ -223,10 +280,10 @@ def segment_image(image_path, window_element, image_drawer=None, img=None):
 
         # convert to device pixels 
         x1, y1, x2, y2 = bbox
-        rx1 = int(x1 * _screen_scaling_factor)
-        ry1 = int(y1 * _screen_scaling_factor)
-        rx2 = int(x2 * _screen_scaling_factor) - 1
-        ry2 = int(y2 * _screen_scaling_factor) - height_offset + 1
+        rx1 = int(x1 * use_scale_factor)
+        ry1 = int(y1 * use_scale_factor)
+        rx2 = int(x2 * use_scale_factor) - 1
+        ry2 = int(y2 * use_scale_factor) - height_offset + 1
 
         if rx2 < rx1:
             rx2 = rx1
@@ -240,6 +297,6 @@ def segment_image(image_path, window_element, image_drawer=None, img=None):
         except Exception as e:
             print(f"Error drawing rectangle: {e}")
 
-    if image_drawer is None:
+    if should_save:
         print(f"Saving segmented image to {image_path}")
         img.save(image_path)
