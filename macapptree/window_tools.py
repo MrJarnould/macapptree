@@ -207,22 +207,11 @@ def segment_image(image_path, window_element, image_drawer=None, img=None, scale
         
         # Determine scale factor only once at the top level call
         if scale_factor is None:
-            # Heuristic: Compare image width vs window element width (points)
-            # This is flawed if window_element is just a container without size.
-            # But the root window element usually has a size.
-            
-            # Better Heuristic: Check against global screen backing factor.
-            # If image width (px) approx equals window width (pt) * global_scale, use global_scale.
-            # If image width (px) approx equals window width (pt) * 1.0, use 1.0.
-            
-            # Let's try to infer from the ratio of image size to screen size?
-            # Or pass it in? Passing it in would require changing callers.
-            # Let's try to infer it here.
-            
-            current_scaling_factor = _screen_scaling_factor # Default
+            # Heuristic: Compare image width vs window element width (points) to detect 1x vs 2x.
+            # If explicit detection fails, fallback to the screen's backing scale factor.
+            current_scaling_factor = _screen_scaling_factor
             
             try:
-                # If window_element has a valid size (points)
                 if hasattr(window_element, 'window_screen_rect'):
                      # window_screen_rect is (x, y, x2, y2)
                     bx, by, bx2, by2 = window_element.window_screen_rect
@@ -231,33 +220,15 @@ def segment_image(image_path, window_element, image_drawer=None, img=None, scale
                     
                     if win_w_pt > 0:
                         ratio = img_w_px / win_w_pt
-                        # Round to nearest integer-ish (1.0 or 2.0)
                         if abs(ratio - 1.0) < 0.1:
                             current_scaling_factor = 1.0
                         elif abs(ratio - 2.0) < 0.1:
                             current_scaling_factor = 2.0
-                        # Else keep default
-            except:
+            except Exception:
                 pass
             
             scale_factor = current_scaling_factor
 
-    # If recursively called, scale_factor is passed down or None (if called from inside loop without updating arg)
-    # Wait, existing recursion logic: `segment_image(..., child, image_drawer=image_drawer, img=img)`
-    # It does NOT pass scale_factor. So we default to None.
-    # But if image_drawer is NOT None, we don't recalculate scale_factor.
-    # We need to make sure we use the same scale factor during recursion.
-    # This design is slightly messy because recursion uses the same function.
-    
-    # FIX: Use a helper or ensure scale_factor is passed.
-    
-    # Since I cannot easily change the signature in the recursive call without changing the file significantly,
-    # I will use a local variable `use_scale_factor`.
-    
-    use_scale_factor = scale_factor if scale_factor is not None else _screen_scaling_factor
-    
-    # If we are the root call (image_drawer is None), we calculated it.
-    
     use_scale_factor = scale_factor if scale_factor is not None else _screen_scaling_factor
     
     # iterate over all children

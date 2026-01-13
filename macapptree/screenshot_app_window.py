@@ -1,15 +1,15 @@
-from typing import Iterable, List, Dict, AnyStr, Union, Tuple
-from macapptree.uielement import UIElement
-import subprocess
-from PIL import ImageGrab
-import time
-import Quartz
 import os
+import subprocess
+import time
+from typing import AnyStr, Dict, Iterable, List, Tuple, Union
+
 import AppKit
+import Quartz
+from PIL import Image, ImageGrab
 from unidecode import unidecode
-from PIL import Image
+
 from macapptree.exceptions import WindowNotFoundException
-import time as _time
+from macapptree.uielement import UIElement
 
 DOCK_BUNDLE = "com.apple.dock"
 
@@ -22,7 +22,7 @@ WindowInfo = Dict[AnyStr, Union[AnyStr, int]]
 
 USER_OPTS_STR = "exclude_desktop on_screen_only"
 FILE_EXT = "png"
-COMMAND = 'screencapture -C -o "{filename}"'
+COMMAND = 'screencapture -l {window} -C -o "{filename}"'
 SUCCESS = 0
 STATUS_BAR_WINDOW_IDENTIFIER = "Item-0"
 
@@ -39,11 +39,8 @@ def get_window_info() -> List[WindowInfo]:
 
 
 def capture_full_screen(output_path: str):
-    screen = AppKit.NSScreen.mainScreen()
-    frame = screen.frame()
-    left, top = int(frame.origin.x), int(frame.origin.y)
-    width, height = int(frame.size.width), int(frame.size.height)
-    img = ImageGrab.grab(bbox=(left, top, left + width, top + height))
+    # Capture full screen without bbox to ensure Retina (2x) resolution on macOS
+    img = ImageGrab.grab()
     img.save(output_path)
     print(f"Full-screen screenshot saved to {output_path}")
     return output_path
@@ -116,19 +113,30 @@ def get_filename(window_name, extension, add_cursor_move) -> str:
 
 
 def crop_screenshot(image_path, window_coords, output_path):
-    backing_scale_factor = AppKit.NSScreen.mainScreen().backingScaleFactor()
-
+    # Detect scale factor dynamically: compare image pixels to screen points.
     screenshot = Image.open(image_path)
-
+    img_width, img_height = screenshot.size
+    
+    # Window coords are in logical Points
     left, top, width, height = window_coords
-
+    
+    # Get main screen width (Points) to determine ratio
+    screen = AppKit.NSScreen.mainScreen()
+    frame = screen.frame()
+    screen_width_points = frame.size.width
+    
+    scale_factor = 1.0
+    if img_width > screen_width_points + 1:
+        # Image is larger than screen points -> likely Retina (2x) or other scaling
+        scale_factor = img_width / screen_width_points
+    
     right = left + width
     bottom = top + height
 
-    cropped_image = screenshot.crop((int(left * backing_scale_factor),
-                                     int(top * backing_scale_factor),
-                                     int(right * backing_scale_factor),
-                                     int(bottom * backing_scale_factor)))
+    cropped_image = screenshot.crop((int(left * scale_factor),
+                                     int(top * scale_factor),
+                                     int(right * scale_factor),
+                                     int(bottom * scale_factor)))
 
     cropped_image.save(output_path)
     scaled_coors = (int(left ),
@@ -174,12 +182,13 @@ def screenshot_window_to_file(
 ) -> str:
     identifier, _, window_coords = find_window(app_name, window_name)
     take_screenshot(identifier, output_file)
-    _, extension = os.path.splitext(output_file)
-    time.sleep(0.4)
-    filename_cropped = output_file.replace(f".{extension}", f"_cropped.{extension}")
-    scaled_coors = crop_screenshot(output_file, window_coords, filename_cropped)
-    time.sleep(0.4)
-    return filename_cropped, scaled_coors
+    
+    # Return the file path and coordinates (converted to expected format if needed)
+    # The original code returned scaled_coors which were (left, top, right, bottom)
+    x, y, w, h = window_coords
+    scaled_coors = (int(x), int(y), int(x + w), int(y + h))
+    
+    return output_file, scaled_coors
 
 
 # screenshot required window
@@ -200,12 +209,10 @@ def screenshot_windows(
         file_path = take_screenshot(identifier, file_name, output_folder)
         time.sleep(0.4)
 
-        file_path_cropped = file_path.replace(f".{extension}", f"_cropped.{extension}")
-        file_name_cropped = file_name.replace(f".{extension}", f"_cropped.{extension}")
-
-        scaled_coors = crop_screenshot(file_path, window_coords, file_path_cropped)
-        time.sleep(0.4)
-        return (file_name_cropped, scaled_coors)
+        x, y, w, h = window_coords
+        scaled_coors = (int(x), int(y), int(x + w), int(y + h))
+        
+        return (file_path, scaled_coors)
     except Exception as e:
         print(repr(e))
         return
