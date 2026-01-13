@@ -1,15 +1,44 @@
 import os
+import subprocess
 import time
+
 import AppKit
 import Quartz
-import ApplicationServices
 
 import macapptree.apps as apps
-from macapptree.uielement import UIElement
 from macapptree.extractor import extract_window
-from macapptree.window_tools import store_screen_scaling_factor, segment_window_components
 from macapptree.screenshot_app_window import capture_full_screen
-from macapptree.window_tools import propagate_screen_rect
+from macapptree.uielement import UIElement
+from macapptree.window_tools import (
+    propagate_screen_rect,
+    segment_window_components,
+    store_screen_scaling_factor,
+)
+
+
+def get_dock_orientation() -> str:
+    try:
+        result = subprocess.run(
+            ['defaults', 'read', 'com.apple.dock', 'orientation'],
+            capture_output=True, text=True
+        )
+        val = result.stdout.strip()
+        if val in ["left", "bottom", "right"]:
+            return val
+    except Exception:
+        pass
+    return "bottom"
+
+def get_dock_autohide() -> bool:
+    try:
+        result = subprocess.run(
+            ['defaults', 'read', 'com.apple.dock', 'autohide'],
+            capture_output=True, text=True
+        )
+        return result.stdout.strip() == "1"
+    except Exception:
+        pass
+    return True  # Default to True to be safe (reveal if unsure)
 
 DOCK_THICKNESS_PT = 96 
 
@@ -32,6 +61,10 @@ def _propagate_screen_rect_local(ui_element, screen_rect_tl):
 # if the dock is set to autohide, we can move the mouse to reveal it temporarily
 def _reveal_dock_temporarily(orientation: str = "bottom", dwell: float = 0.8):
     try:
+        # Save current mouse position
+        loc = Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
+        current_x, current_y = loc.x, loc.y
+
         screen = AppKit.NSScreen.mainScreen().frame()
         sw, sh = int(screen.size.width), int(screen.size.height)
 
@@ -46,13 +79,18 @@ def _reveal_dock_temporarily(orientation: str = "bottom", dwell: float = 0.8):
         evt = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, (x, y), Quartz.kCGMouseButtonLeft)
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, evt)
         time.sleep(dwell)
+
+        # Restore mouse position
+        restore_evt = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, (current_x, current_y), Quartz.kCGMouseButtonLeft)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, restore_evt)
+        
     except Exception:
         pass
 
 class DockCapture:
-    def __init__(self, orientation: str = "bottom", reveal: bool = True, dwell: float = 0.8):
-        self.orientation = orientation
-        self.reveal = reveal
+    def __init__(self, orientation: str = None, reveal: bool = None, dwell: float = 0.8):
+        self.orientation = orientation or get_dock_orientation()
+        self.reveal = reveal if reveal is not None else get_dock_autohide()
         self.dwell = dwell
 
     def capture(self, max_depth=None, output_screenshot_dir=None):
