@@ -13,6 +13,9 @@ from macapptree.uielement import UIElement
 
 DOCK_BUNDLE = "com.apple.dock"
 
+# Calculate image scale factor by comparing image pixels to logical points
+
+
 
 class ScreencaptureEx(Exception):
     pass
@@ -113,22 +116,27 @@ def get_filename(window_name, extension, add_cursor_move) -> str:
 
 
 def crop_screenshot(image_path, window_coords, output_path):
-    # Detect scale factor dynamically: compare image pixels to screen points.
+    # Detect scale factor dynamically using shared helper
     screenshot = Image.open(image_path)
     img_width, img_height = screenshot.size
     
     # Window coords are in logical Points
     left, top, width, height = window_coords
     
-    # Get main screen width (Points) to determine ratio
-    screen = AppKit.NSScreen.mainScreen()
-    frame = screen.frame()
-    screen_width_points = frame.size.width
+    # Local import to avoid circular dependency
+    from macapptree.window_tools import get_image_scale_factor
+    scale_factor = get_image_scale_factor(img_width, width)
     
-    scale_factor = 1.0
-    if img_width > screen_width_points + 1:
-        # Image is larger than screen points -> likely Retina (2x) or other scaling
-        scale_factor = img_width / screen_width_points
+    if scale_factor is None:
+        # Fallback if window width is 0 or something went wrong? 
+        # Actually validation logic in get_image_scale_factor handles robustly, but we need a default.
+        # If None (could not determine), let's guess based on screen?
+        # Re-using the logic: if None, assume global fallback? 
+        # But get_image_scale_factor handles logic.
+        # Let's check get_image_scale_factor implementation again.
+        # I changed it to return None instead of global _screen_scaling_factor because _screen_scaling_factor is not available here.
+        # So I need to import AppKit here to get fallback.
+        scale_factor = AppKit.NSScreen.mainScreen().backingScaleFactor()
     
     right = left + width
     bottom = top + height
