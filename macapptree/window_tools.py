@@ -5,25 +5,11 @@ import AppKit
 from PIL import Image, ImageDraw
 
 from macapptree.apps import get_visible_windows_for_bundles
+from macapptree.scale_utils import get_image_scale_factor
 from macapptree.screenshot_app_window import rect_subtract
 
 _screen_scaling_factor = 1
 
-# Calculate image scale factor by comparing image pixels to logical points
-def get_image_scale_factor(image_width_px, target_width_points):
-    """
-    detects if an image is 1x or 2x (Retina) by comparing its pixel width
-    to the target object's logical point width.
-    """
-    if target_width_points > 0:
-        ratio = image_width_px / target_width_points
-        if abs(ratio - 1.0) < 0.1:
-            return 1.0
-        elif abs(ratio - 2.0) < 0.1:
-            return 2.0
-            
-    # Fallback to the global screen factor if target dimensions are invalid
-    return _screen_scaling_factor
 
 
 def propagate_screen_rect(ui_element, screen_rect_tl):
@@ -225,16 +211,10 @@ def segment_image(image_path, window_element, image_drawer=None, img=None, scale
         
         # Determine scale factor only once at the top level call
         if scale_factor is None:
-            # Detect scale factor using the helper
             target_width = 0
-            try:
-                if hasattr(window_element, 'window_screen_rect'):
-                     # window_screen_rect is (x, y, x2, y2)
-                    bx, by, bx2, by2 = window_element.window_screen_rect
-                    target_width = bx2 - bx
-            except Exception:
-                pass
-            
+            if hasattr(window_element, 'window_screen_rect'):
+                bx, by, bx2, by2 = window_element.window_screen_rect
+                target_width = bx2 - bx
             scale_factor = get_image_scale_factor(img.width, target_width)
 
     use_scale_factor = scale_factor if scale_factor is not None else _screen_scaling_factor

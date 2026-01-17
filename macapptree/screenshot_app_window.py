@@ -9,6 +9,7 @@ from PIL import Image, ImageGrab
 from unidecode import unidecode
 
 from macapptree.exceptions import WindowNotFoundException
+from macapptree.scale_utils import get_image_scale_factor
 from macapptree.uielement import UIElement
 
 DOCK_BUNDLE = "com.apple.dock"
@@ -116,28 +117,14 @@ def get_filename(window_name, extension, add_cursor_move) -> str:
 
 
 def crop_screenshot(image_path, window_coords, output_path):
-    # Detect scale factor dynamically using shared helper
     screenshot = Image.open(image_path)
-    img_width, img_height = screenshot.size
+    img_width, _ = screenshot.size
     
     # Window coords are in logical Points
     left, top, width, height = window_coords
-    
-    # Local import to avoid circular dependency
-    from macapptree.window_tools import get_image_scale_factor
+
     scale_factor = get_image_scale_factor(img_width, width)
-    
-    if scale_factor is None:
-        # Fallback if window width is 0 or something went wrong? 
-        # Actually validation logic in get_image_scale_factor handles robustly, but we need a default.
-        # If None (could not determine), let's guess based on screen?
-        # Re-using the logic: if None, assume global fallback? 
-        # But get_image_scale_factor handles logic.
-        # Let's check get_image_scale_factor implementation again.
-        # I changed it to return None instead of global _screen_scaling_factor because _screen_scaling_factor is not available here.
-        # So I need to import AppKit here to get fallback.
-        scale_factor = AppKit.NSScreen.mainScreen().backingScaleFactor()
-    
+
     right = left + width
     bottom = top + height
 
