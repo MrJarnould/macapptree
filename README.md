@@ -1,6 +1,6 @@
 [![MacPaw Research](https://pbs.twimg.com/profile_banners/3993798502/1720615716/1500x500)](https://research.macpaw.com)
 
-![PyPI - Version](https://img.shields.io/pypi/v/macapptree)
+![PyPI - Version](https://img.shields.io/pypi/v/macapptree) [![arXiv](https://img.shields.io/badge/arXiv-2510.16051-b31b1b.svg)](https://arxiv.org/abs/2510.16051)
 
 # macapptree
 
@@ -140,6 +140,17 @@ python -m macapptree.main \
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## Citation
+```
+@article{garkot2025guirilla,
+  title={GUIrilla: A Scalable Framework for Automated Desktop UI Exploration},
+  author={Garkot, Sofiya and Shamrai, Maksym and Synytsia, Ivan and Hirna, Mariya},
+  journal={arXiv preprint arXiv:2510.16051},
+  year={2025},
+  url={https://arxiv.org/abs/2510.16051}
+}
+```
 
 ## MacPaw Research
 
