@@ -1,13 +1,16 @@
-import AppKit
 import shutil
-
-from PIL import Image, ImageDraw
 from time import sleep
 
+import AppKit
+from PIL import Image, ImageDraw
+
 from macapptree.apps import get_visible_windows_for_bundles
+from macapptree.scale_utils import get_image_scale_factor
 from macapptree.screenshot_app_window import rect_subtract
 
 _screen_scaling_factor = 1
+
+
 
 def propagate_screen_rect(ui_element, screen_rect_tl):
     ui_element.window_screen_rect = screen_rect_tl
@@ -161,6 +164,7 @@ def color_for_role(role):
     return color
 
 
+
 # segment the window components
 def segment_window_components(window, image_path: str):
     print(f"Segmenting window {window.name}")
@@ -178,6 +182,7 @@ def segment_window_components(window, image_path: str):
 
     return segment_image_path
 
+
 def _build_global_visible_index(bundle_ids):
     windows = get_visible_windows_for_bundles(bundle_ids) 
     seen = []
@@ -194,19 +199,30 @@ def _build_global_visible_index(bundle_ids):
     return out
 
 
-# paint all children to a different color on the screenshot
-def segment_image(image_path, window_element, image_drawer=None, img=None):
+def segment_image(image_path, window_element, image_drawer=None, img=None, scale_factor=None):
     if image_path is None:
         return
 
+    should_save = False
     if image_drawer is None:
+        should_save = True
         img = Image.open(image_path)
         image_drawer = ImageDraw.Draw(img)
+        
+        # Determine scale factor only once at the top level call
+        if scale_factor is None:
+            target_width = 0
+            if hasattr(window_element, 'window_screen_rect'):
+                bx, by, bx2, by2 = window_element.window_screen_rect
+                target_width = bx2 - bx
+            scale_factor = get_image_scale_factor(img.width, target_width)
 
+    use_scale_factor = scale_factor if scale_factor is not None else _screen_scaling_factor
+    
     # iterate over all children
     for child in getattr(window_element, "children", []):
         if getattr(child, "children", None):
-            segment_image(image_path, child, image_drawer=image_drawer, img=img)
+            segment_image(image_path, child, image_drawer=image_drawer, img=img, scale_factor=use_scale_factor)
 
         if not child.visible:
             continue
@@ -214,7 +230,7 @@ def segment_image(image_path, window_element, image_drawer=None, img=None):
         bbox = child.visible_bbox
         if not bbox:
             continue
-
+        
         size = child.size
         if size is None or size.width == 0 or size.height == 0:
             continue
@@ -223,10 +239,10 @@ def segment_image(image_path, window_element, image_drawer=None, img=None):
 
         # convert to device pixels 
         x1, y1, x2, y2 = bbox
-        rx1 = int(x1 * _screen_scaling_factor)
-        ry1 = int(y1 * _screen_scaling_factor)
-        rx2 = int(x2 * _screen_scaling_factor) - 1
-        ry2 = int(y2 * _screen_scaling_factor) - height_offset + 1
+        rx1 = int(x1 * use_scale_factor)
+        ry1 = int(y1 * use_scale_factor)
+        rx2 = int(x2 * use_scale_factor) - 1
+        ry2 = int(y2 * use_scale_factor) - height_offset + 1
 
         if rx2 < rx1:
             rx2 = rx1
@@ -240,6 +256,6 @@ def segment_image(image_path, window_element, image_drawer=None, img=None):
         except Exception as e:
             print(f"Error drawing rectangle: {e}")
 
-    if image_drawer is None:
+    if should_save:
         print(f"Saving segmented image to {image_path}")
         img.save(image_path)
